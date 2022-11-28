@@ -191,7 +191,7 @@ class ClientInterface:
                     messagebox.showinfo("Game is end", "Game is end")
 
                     # add close button
-                    self.close_button = Button(self.root, text="Close", command=self.controller.close)
+                    self.close_button = Button(self.root, text="Close", command=self.close)
                     self.close_button.place(relx=0.5, rely=0.9, anchor="center")
                     break
 
@@ -229,6 +229,15 @@ class ClientInterface:
         self.scores.config(state='disabled')
 
         messagebox.showinfo("Result", f"{response['message']} \n Correct answer: {response['answer']}")
+
+    def close(self):
+        """
+        Close window
+        :return:
+        """
+        self.root.destroy()
+        self.controller.close()
+        ClientInterface()
 
 
 if __name__ == "__main__":

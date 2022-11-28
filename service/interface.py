@@ -139,6 +139,7 @@ class ServiceInterface:
 
         # wait for players
         is_completed = self.controller.wait_clients(self)
+
         self.add_log("All players connected. Game started\n")
 
         # check if player connections is completed
@@ -218,10 +219,16 @@ class ServiceInterface:
         :return: None
         """
         # terminate thread if it is running
-        if self.game_thread.is_alive():
-            self.game_thread.join(timeout=0)
+        try:
+            if self.game_thread.is_alive():
+                self.game_thread.join(timeout=0)
 
-        self.add_log("Server closed")
+            self.controller.close()
+            self.root.destroy()
+
+            ServiceInterface()
+        except Exception as e:
+            print(e)
 
 
 if __name__ == '__main__':
