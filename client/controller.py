@@ -64,24 +64,15 @@ class ClientController:
         """
         self.server.send(message.encode())
 
-
-if __name__ == '__main__':
-    controller = ClientController(host='localhost', port=5000, name='Furkan')
-    message = controller.connect()
-    print(message)
-    is_end = False
-    while not is_end:
-        question = controller.receive_message()
-        print(question)
-
-        answer = input('Answer: ')
-        controller.send_message(answer)
-
-        result = json.loads(controller.receive_message())
-        print(result)
-        is_end = result['is_end']
-    while True:
-        is_end = input("Do you want to end game? (y/n): ")
-        if is_end == 'y':
-            break
-    controller.close()
+    @property
+    def is_connected(self):
+        """
+        Check connection
+        :return: True if connected, False otherwise
+        """
+        try:
+            self.server.send(''.encode())
+            return True
+        except Exception:
+            print('Disconnected')
+            return False

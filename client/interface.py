@@ -139,6 +139,10 @@ class ClientInterface:
         self.game_thread = Thread(target=self.game)
         self.game_thread.start()
 
+        # check connection in thread
+        self.check_connection_thread = Thread(target=self.check_connection)
+        self.check_connection_thread.start()
+
     def game(self):
         """
         Start game
@@ -230,6 +234,17 @@ class ClientInterface:
 
         messagebox.showinfo("Result", f"{response['message']} \n Correct answer: {response['answer']}")
 
+    def check_connection(self):
+        """
+        Check connection with server
+        :return:
+        """
+        while True:
+            if not self.controller.is_connected:
+                messagebox.showerror("Error", "Connection is lost")
+                self.close()
+                break
+
     def close(self):
         """
         Close window
@@ -237,7 +252,8 @@ class ClientInterface:
         """
         self.root.destroy()
         self.controller.close()
-        ClientInterface()
+        self.game_thread.join(timeout=0)
+        exit()
 
 
 if __name__ == "__main__":

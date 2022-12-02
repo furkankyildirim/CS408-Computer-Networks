@@ -151,7 +151,11 @@ class ServiceController:
         :return: None
         """
         # receive answer from client
-        player.answer = int(player.receive())
+        while True:
+            response = player.receive()
+            if response != '':
+                player.answer = int(response)
+                return
 
     def compare_answers(self, layout, answer: int) -> None:
         """

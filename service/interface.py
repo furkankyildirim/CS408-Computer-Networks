@@ -1,5 +1,5 @@
 import time
-from tkinter import Tk, Label, Button, Entry, StringVar, END, messagebox, Text, NORMAL, DISABLED
+from tkinter import Tk, Label, Button, Entry, END, messagebox, Text, NORMAL, DISABLED
 from typing import Union
 from threading import Thread
 
@@ -20,6 +20,9 @@ class ServiceInterface:
         self.start_server_layout()
 
         self.root.mainloop()
+        self.controller.close()
+        self.game_thread.join(timeout=0)
+        exit(0)
 
     def start_server_layout(self) -> None:
         """
@@ -112,10 +115,6 @@ class ServiceInterface:
         # set rich text box for see logs
         self.outputs = Text(self.root, width=80, height=20, state=DISABLED)
         self.outputs.place(relx=0.1, rely=0.25, relwidth=0.8, relheight=0.5)
-
-        # set close button
-        close_button = Button(self.root, text="Close", font=("Arial", 12), command=self.close_server)
-        close_button.place(relx=0.5, rely=0.85, anchor="center")
 
     def start_game(self) -> None:
         """
@@ -223,9 +222,8 @@ class ServiceInterface:
             if self.game_thread.is_alive():
                 self.game_thread.join(timeout=0)
 
-            self.controller.close()
             self.root.destroy()
-
+            self.controller.close()
             ServiceInterface()
         except Exception as e:
             print(e)
