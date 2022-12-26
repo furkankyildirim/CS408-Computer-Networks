@@ -38,12 +38,14 @@ class ServiceInterface:
         port_number_label.place(relx=0.25, rely=0.4, anchor="center")
 
         self.port_number_entry = Entry(self.root, width=38)
+        self.port_number_entry.insert(0, "5000")
         self.port_number_entry.place(relx=0.65, rely=0.4, anchor="center")
 
         question_count_label = Label(self.root, text="Question Count:", font=("Arial", 12))
         question_count_label.place(relx=0.25, rely=0.5, anchor="center")
 
         self.question_count_entry = Entry(self.root, width=38)
+        self.question_count_entry.insert(0, "5")
         self.question_count_entry.place(relx=0.65, rely=0.5, anchor="center")
 
         # start server button
@@ -115,6 +117,21 @@ class ServiceInterface:
         # set rich text box for see logs
         self.outputs = Text(self.root, width=80, height=20, state=DISABLED)
         self.outputs.place(relx=0.1, rely=0.25, relwidth=0.8, relheight=0.5)
+
+        self.start_game_button = Button(self.root, text="Start Game", font=("Arial", 12),
+                                        command=self.finish_waiting)
+        self.start_game_button.place(relx=0.5, rely=0.9, anchor="center")
+
+    def finish_waiting(self):
+        """
+        Finish waiting for players
+        :return:
+        """
+        if len(self.controller.players) >= 2:
+            self.controller._is_started = True
+            self.start_game_button.destroy()
+        else:
+            messagebox.showerror("Error", "You must have at least 2 players to start the game")
 
     def start_game(self) -> None:
         """

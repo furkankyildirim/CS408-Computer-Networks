@@ -1,5 +1,5 @@
 from typing import Tuple, Dict, List, Union, Any
-from socket import socket, AF_INET, SOCK_STREAM
+from socket import socket, AF_INET, SOCK_STREAM, timeout
 from json import dumps
 from threading import Thread
 import random
@@ -25,6 +25,7 @@ class ServiceController:
         self.questions: Dict[str: int] = {}
 
         self._is_terminated = False  # set is_terminated to True to terminate the game
+        self._is_started = False  # set is_started to True to start the game
 
     def connect(self) -> None:
         """
@@ -33,7 +34,7 @@ class ServiceController:
         """
         self.server = socket(AF_INET, SOCK_STREAM)
         self.server.bind(('localhost', self.port))
-        self.server.listen(2)
+        self.server.listen(5)
         print('Server is listening')
 
     def close(self) -> None:
@@ -48,12 +49,24 @@ class ServiceController:
         """
         Wait for clients to connect
         :param layout: layout of the game
-        :return: True if two clients connected, False otherwise
+        :return: True if clients connected, False otherwise
         """
+
+        layout.add_log('Waiting for clients to connect...')
+
         try:
-            layout.add_log('Waiting for clients to connect...')
-            while len(self.players) < 2:
-                client, address = self.server.accept()
+            # set timeout for server
+            self.server.settimeout(1)
+
+            # wait for clients to connect
+            while not self._is_started:
+
+                # check if server stop waiting for clients
+                try:
+                    client, address = self.server.accept()
+                except timeout:
+                    continue
+
                 name = client.recv(1024).decode()
 
                 # send message to client if name is empty
@@ -75,10 +88,12 @@ class ServiceController:
                 self.players[name] = player
 
                 # send message to client
-                client.send('Connected'.encode())
+                player.send('Connected')
 
                 layout.add_log(f'Client {address} connected with name {name}')
 
+            # remove timeout from server
+            self.server.settimeout(None)
             return True
 
         except Exception as e:
@@ -180,7 +195,7 @@ class ServiceController:
 
         # add score to winner player
         for player in winner:
-            player.score = 1 if len(winner) == 1 else 0.5
+            player.score = 1 / len(winner)
             player.total += player.score
 
             log_text = f'{player.name} answered {player.answer} and got {player.score} point(s)'
@@ -207,7 +222,7 @@ class ServiceController:
             # set result message for player
             if self.players[player].score == 1:
                 response["message"] = f'You won this round with {self.players[player].answer}.'
-            elif self.players[player].score == 0.5:
+            elif self.players[player].score > 0:
                 response["message"] = f'You tied with {self.players[player].answer}.'
             else:
                 response["message"] = f'You lost this round with {self.players[player].answer}.'

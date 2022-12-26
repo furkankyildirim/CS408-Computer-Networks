@@ -35,12 +35,14 @@ class ClientInterface:
         host_label.place(relx=0.25, rely=0.4, anchor="center")
 
         self.host_entry = Entry(self.root, width=38)
+        self.host_entry.insert(0, "localhost")
         self.host_entry.place(relx=0.65, rely=0.4, anchor="center")
 
         port_number_label = Label(self.root, text="Port Number: ", font=("Arial", 12))
         port_number_label.place(relx=0.25, rely=0.5, anchor="center")
 
         self.port_number_entry = Entry(self.root, width=38)
+        self.port_number_entry.insert(0, "5000")
         self.port_number_entry.place(relx=0.65, rely=0.5, anchor="center")
 
         self.name_label = Label(self.root, text="Name:", font=("Arial", 12))
