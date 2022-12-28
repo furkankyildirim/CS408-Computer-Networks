@@ -3,7 +3,7 @@ from tkinter import Tk, Label, Button, Entry, END, messagebox, Text, NORMAL, DIS
 from typing import Union
 from threading import Thread
 
-from service.controller import ServiceController
+from controller import ServiceController
 
 
 class ServiceInterface:

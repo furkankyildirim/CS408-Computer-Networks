@@ -4,7 +4,7 @@ from json import dumps
 from threading import Thread
 import random
 
-from service.player_model import Player
+from player_model import Player
 
 
 class ServiceController:
