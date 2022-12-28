@@ -16,10 +16,14 @@ class ClientInterface:
 
         self.root.resizable(False, False)
         self.log_count = 1
-
+        self.is_end = False
         self.start_client_layout()
 
         self.root.mainloop()
+        self.connection_thread.join()
+        print("Client closed")
+        self.game_thread.join()
+        self.controller.close()
 
     def start_client_layout(self) -> None:
         """
@@ -141,74 +145,88 @@ class ClientInterface:
         self.game_thread = Thread(target=self.game)
         self.game_thread.start()
 
-        # check connection in thread
-        self.check_connection_thread = Thread(target=self.check_connection)
-        self.check_connection_thread.start()
-
     def game(self):
         """
         Start game
         :return:
         """
-        self.waiting_message.config(text="Waiting for other players enter the game")
 
-        is_start = self.controller.receive_message()
+        # check server status
+        self.connection_thread = Thread(target=self.check_connection)
+        self.connection_thread.start()
 
-        if is_start == "start":
-            # remove waiting message and set question layout
-            self.waiting_message.config(text="")
-            self.question_label = Label(self.root)
-            self.question_label.place(relx=0.25, rely=0.1975, anchor="center")
+        # start game
+        while not self.controller.is_terminated:
 
-            self.answer_entry = Entry(self.root, width=38)
-            self.answer_entry.place(relx=0.25, rely=0.25, anchor="center")
+            self.waiting_message.config(text="Waiting for other players enter the game")
+            is_start = self.controller.receive_message()
 
-            self.answer_button = Button(self.root, text="Answer", command=self.send_answer)
-            self.answer_button.place(relx=0.275, rely=0.4, anchor="center")
+            if is_start == "start":
+                # remove waiting message and set question layout
+                self.scores.config(state='normal')
+                self.scores.delete('1.0', 'end')
+                self.scores.insert('end', f'Scores will be shown after the first question is answered')
+                self.scores.config(state='disabled')
 
-            self.is_end = False
-            question_count = 1
-
-            while not self.is_end:
-                # get question from server
-                question = self.controller.receive_message()
-
-                # set waiting message
                 self.waiting_message.config(text="")
+                self.question_label = Label(self.root)
+                self.question_label.place(relx=0.25, rely=0.1975, anchor="center")
 
-                # set question
-                self.question_label.config(text=f'Question {question_count}: {question}')
+                self.answer_entry = Entry(self.root, width=38)
+                self.answer_entry.place(relx=0.25, rely=0.25, anchor="center")
 
-                # get result from server
-                result = json.loads(self.controller.receive_message())
+                self.answer_button = Button(self.root, text="Answer", command=self.send_answer)
+                self.answer_button.place(relx=0.275, rely=0.4, anchor="center")
 
-                # set scores
-                self.show_results(result)
+                self.is_end = False
+                question_count = 1
 
-                # check if game is end
-                if result['is_end']:
-                    self.is_end = True
-                    self.waiting_message.config(text="Game is end")
-                    self.question_label.destroy()
-                    self.answer_button.destroy()
-                    self.answer_entry.destroy()
+                while not self.is_end:
+                    # get question from server
+                    question = self.controller.receive_message()
 
-                    # show game is end message
-                    messagebox.showinfo("Game is end", "Game is end")
+                    # set waiting message
+                    self.waiting_message.config(text="")
 
-                    # add close button
-                    self.close_button = Button(self.root, text="Close", command=self.close)
-                    self.close_button.place(relx=0.5, rely=0.9, anchor="center")
-                    break
+                    # set question
+                    self.question_label.config(text=f'Question {question_count}: {question}')
 
-                # increase question count
-                question_count += 1
+                    # get message from server
+                    message = self.controller.receive_message()
+                    if message == "only_one_player":
+                        # if there is only one player in the game
+                        messagebox.showinfo("Error", "There is only one player in the game. You win")
+                        self.question_label.destroy()
+                        self.answer_button.destroy()
+                        self.answer_entry.destroy()
 
-                # clear answer entry
-                self.answer_entry.delete(0, "end")
+                        # wait restart message
+                        self.wait_restart_message()
 
-        # close connection
-        self.controller.close()
+                    else:
+                        result = json.loads(message)
+
+                        # set scores
+                        self.show_results(result)
+
+                        # check if game is end
+                        if result['is_end']:
+                            self.is_end = True
+
+                            messagebox.showinfo("Game is end", "Game is end")
+                            self.question_label.destroy()
+                            self.answer_button.destroy()
+                            self.answer_entry.destroy()
+
+                            # wait restart message
+                            self.wait_restart_message()
+
+                    # increase question count
+                    question_count += 1
+
+                    # clear answer entry
+                    if not self.is_end:
+                        self.answer_entry.delete(0, "end")
 
     def send_answer(self):
         """
@@ -241,21 +259,32 @@ class ClientInterface:
         Check connection with server
         :return:
         """
-        while True:
+        while not self.is_end:
             if not self.controller.is_connected:
                 messagebox.showerror("Error", "Connection is lost")
-                self.close()
-                break
+                self.is_end = True
+                self.waiting_message.config(text="Connection lost")
+                self.question_label.destroy()
+                self.answer_button.destroy()
+                self.answer_entry.destroy()
+                return
 
-    def close(self):
+    def wait_restart_message(self):
         """
-        Close window
+        Wait restart message from server
         :return:
         """
-        self.root.destroy()
-        self.controller.close()
-        self.game_thread.join(timeout=0)
-        exit()
+        self.waiting_message.config(text="Waits server message")
+        message = self.controller.receive_message()
+
+        if message != "restart":
+            self.controller.is_terminated = True
+            self.waiting_message.config(text="Game is end")
+
+            # add close button
+            self.close_button = Button(self.root, text="Close", command=self.root.destroy)
+            self.close_button.place(relx=0.5, rely=0.9, anchor="center")
+            # break
 
 
 if __name__ == "__main__":

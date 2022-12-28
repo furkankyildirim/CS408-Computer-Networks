@@ -1,9 +1,10 @@
 import time
-from tkinter import Tk, Label, Button, Entry, END, messagebox, Text, NORMAL, DISABLED
+from tkinter import Tk, Label, Button, Entry, END, messagebox, Text, NORMAL, DISABLED, Frame
 from typing import Union
 from threading import Thread
 
 from controller import ServiceController
+from message_box import MessageBox
 
 
 class ServiceInterface:
@@ -20,8 +21,12 @@ class ServiceInterface:
         self.start_server_layout()
 
         self.root.mainloop()
+        self.controller._is_terminated = True
+        self.connection_thread.join()
+        print("Connection thread joined")
+        self.game_thread.join()
+        print("Game thread joined")
         self.controller.close()
-        self.game_thread.join(timeout=0)
         exit(0)
 
     def start_server_layout(self) -> None:
@@ -71,7 +76,7 @@ class ServiceInterface:
             self.question_count = int(self.question_count_entry.get())
 
             # connect server
-            self.controller = ServiceController(self.port_number, self.question_count)
+            self.controller = ServiceController(self.port_number, self.question_count, self)
             self.controller.connect()
 
         except ValueError:
@@ -129,7 +134,7 @@ class ServiceInterface:
         """
         if len(self.controller.players) >= 2:
             self.controller._is_started = True
-            self.start_game_button.destroy()
+            self.start_game_button.config(state="disabled")
         else:
             messagebox.showerror("Error", "You must have at least 2 players to start the game")
 
@@ -153,13 +158,22 @@ class ServiceInterface:
         self.controller.read_questions()
         self.add_log("Questions read from file")
 
-        # wait for players
-        is_completed = self.controller.wait_clients(self)
+        # check connections in thread
+        self.connection_thread = Thread(target=self.check_connections)
+        self.connection_thread.start()
 
-        self.add_log("All players connected. Game started\n")
+        while not self.controller._is_terminated:
 
-        # check if player connections is completed
-        if is_completed:
+            self.controller._is_started = False
+            self.controller.asked_question_count = 0
+
+            # activate start game button
+            self.start_game_button.config(state="normal")
+
+            # wait for players
+            self.controller.wait_clients()
+
+            self.add_log("All players connected. Game started\n")
 
             # send starting message to players
             self.controller.send_message_to_clients('start')
@@ -167,15 +181,47 @@ class ServiceInterface:
             # give delay for players
             time.sleep(1)
 
+            # send questions to players
             for i in range(self.question_count):
+
+                if len(self.controller.players) <= 1:
+                    break
+
                 answer = self.ask_question(i)
                 self.get_answers(answer)
                 self.send_results(answer)
 
-            self.add_log("Game finished. Waiting for players to disconnect")
-            self.controller.close()
-        else:
-            self.add_log("Game ended because of client disconnection")
+                if self.controller._is_terminated:
+                    self.connection_thread.join()
+                    return None
+
+            # start new game
+            MessageBox(title="Game Finished", command=self.terminate_game,
+                       message="Game finished. Do you want to terminate the server?")
+
+            if self.controller._is_terminated:
+                self.controller.send_message_to_clients('terminate')
+                self.connection_thread.join()
+                try:
+                    self.add_log("Server terminated")
+                except:
+                    pass
+            else:
+                self.controller.send_message_to_clients('restart')
+                self.add_log("New game started")
+
+        return None
+
+    def check_connections(self):
+        """
+        Check connections in thread
+        :return: None
+        """
+        while not self.controller._is_terminated:
+            if self.controller._is_started:
+                self.controller.check_connections()
+
+        return None
 
     def ask_question(self, question_number: int = 0) -> int:
         """
@@ -199,11 +245,12 @@ class ServiceInterface:
         """
         # get answers from all players
         self.controller.wait_for_answer_from_clients()
-        self.add_log("Answers received from all players")
+        if not self.controller._is_terminated:
+            self.add_log("Answers received from all players")
 
-        # compare answers
-        self.controller.compare_answers(self, correct_answer)
-        self.add_log("Answers compared")
+            # compare answers
+            self.controller.compare_answers(correct_answer)
+            self.add_log("Answers compared")
 
     def send_results(self, correct_answer: int) -> None:
         """
@@ -213,8 +260,9 @@ class ServiceInterface:
         """
 
         # send results to all players
-        self.controller.send_results_to_clients(correct_answer)
-        self.add_log("Results sent to all players\n")
+        if not self.controller._is_terminated:
+            self.controller.send_results_to_clients(correct_answer)
+            self.add_log("Results sent to all players\n")
 
     def add_log(self, log: str) -> None:
         """
@@ -229,21 +277,12 @@ class ServiceInterface:
 
         self.log_count += 1
 
-    def close_server(self) -> None:
+    def terminate_game(self) -> None:
         """
-        Close server
+        Terminate game
         :return: None
         """
-        # terminate thread if it is running
-        try:
-            if self.game_thread.is_alive():
-                self.game_thread.join(timeout=0)
-
-            self.root.destroy()
-            self.controller.close()
-            ServiceInterface()
-        except Exception as e:
-            print(e)
+        self.controller._is_terminated = True
 
 
 if __name__ == '__main__':

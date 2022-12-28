@@ -16,6 +16,8 @@ class ClientController:
         self.port: int = port
         self.name: str = name
 
+        self.is_terminated: bool = False
+
     def connect(self) -> str:
         """
         Connect to server
@@ -54,7 +56,13 @@ class ClientController:
         Receive message from server
         :return: message
         """
-        return self.server.recv(1024).decode()
+        message = ''
+        try:
+            while message == '':
+                message = self.server.recv(1024).decode()
+        except:
+            message = 'Connection closed'
+        return message
 
     def send_message(self, message: str) -> None:
         """
@@ -65,13 +73,13 @@ class ClientController:
         self.server.send(message.encode())
 
     @property
-    def is_connected(self):
+    def is_connected(self) -> bool:
         """
         Check connection
         :return: True if connected, False otherwise
         """
         try:
-            self.server.send(''.encode())
+            self.send_message('')
             return True
         except Exception:
             print('Disconnected')

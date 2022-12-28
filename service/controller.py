@@ -4,11 +4,12 @@ from json import dumps
 from threading import Thread
 import random
 
+from service.message_box import MessageBox
 from player_model import Player
 
 
 class ServiceController:
-    def __init__(self, port: int, question_count: int):
+    def __init__(self, port: int, question_count: int, layout: Any):
         """
         Initialize the service controller
         :param port: Port to listen
@@ -19,10 +20,12 @@ class ServiceController:
         self.port: int = port
         self.total_question_count: int = question_count
         self.asked_question_count: int = 0
+        self.layout: Any = layout
 
         # set players and questions dictionary
-        self.players: List[str: Player] = {}
+        self.players: Dict[str: Player] = {}
         self.questions: Dict[str: int] = {}
+        self.removed_players: Dict[str: Player] = {}
 
         self._is_terminated = False  # set is_terminated to True to terminate the game
         self._is_started = False  # set is_started to True to start the game
@@ -45,61 +48,54 @@ class ServiceController:
         self.server.close()
         print('Server closed')
 
-    def wait_clients(self, layout) -> bool:
+    def wait_clients(self) -> None:
         """
         Wait for clients to connect
         :param layout: layout of the game
-        :return: True if clients connected, False otherwise
         """
 
-        layout.add_log('Waiting for clients to connect...')
+        self.layout.add_log('Waiting for clients to connect...')
+        self.removed_players = {}
 
-        try:
-            # set timeout for server
-            self.server.settimeout(1)
+        # set timeout for server
+        self.server.settimeout(1)
 
-            # wait for clients to connect
-            while not self._is_started:
+        # wait for clients to connect
+        while not self._is_started and not self._is_terminated:
 
-                # check if server stop waiting for clients
-                try:
-                    client, address = self.server.accept()
-                except timeout:
-                    continue
+            # check if server stop waiting for clients
+            try:
+                client, address = self.server.accept()
+            except timeout:
+                continue
 
-                name = client.recv(1024).decode()
+            name = client.recv(1024).decode()
 
-                # send message to client if name is empty
-                if name == '':
-                    layout.add_log(f'Client {address} connected with empty name')
-                    client.send('Name cannot be empty'.encode())
-                    client.close()
-                    continue
+            # send message to client if name is empty
+            if name == '':
+                self.layout.add_log(f'Client {address} connected with empty name')
+                client.send('Name cannot be empty'.encode())
+                client.close()
+                continue
 
-                # send message to client if name is already taken
-                if name in self.players:
-                    layout.add_log(f'Client {address} connected with taken name')
-                    client.send('Name already exists'.encode())
-                    client.close()
-                    continue
+            # send message to client if name is already taken
+            if name in self.players:
+                self.layout.add_log(f'Client {address} connected with taken name')
+                client.send('Name already exists'.encode())
+                client.close()
+                continue
 
-                # add client to players dictionary
-                player = Player(name=name, client=client, address=address)
-                self.players[name] = player
+            # add client to players dictionary
+            player = Player(name=name, client=client, address=address)
+            self.players[name] = player
 
-                # send message to client
-                player.send('Connected')
+            # send message to client
+            player.send('Connected')
 
-                layout.add_log(f'Client {address} connected with name {name}')
+            self.layout.add_log(f'Client {address} connected with name {name}')
 
-            # remove timeout from server
-            self.server.settimeout(None)
-            return True
-
-        except Exception as e:
-            print(e)
-            self.server.close()
-            return False
+        # remove timeout from server
+        self.server.settimeout(None)
 
     def read_questions(self) -> None:
         """
@@ -158,21 +154,30 @@ class ServiceController:
         for thread in threads:
             thread.join()
 
-    @staticmethod
-    def wait_for_answer_from_client(player: Player) -> None:
+    def wait_for_answer_from_client(self, player: Player) -> None:
         """
         Wait for answer from client
         :param player: player object
         :return: None
         """
         # receive answer from client
-        while True:
-            response = player.receive()
-            if response != '':
-                player.answer = int(response)
-                return
+        message = ''
+        player.client.settimeout(1)
 
-    def compare_answers(self, layout, answer: int) -> None:
+        while not self._is_terminated and message == '':
+            try:
+                message = player.receive()
+            except timeout:
+                continue
+            except:
+                player.answer = -1
+                return
+        if message != '':
+            player.answer = int(message)
+        player.client.settimeout(None)
+        return
+
+    def compare_answers(self, answer: int) -> None:
         """
         Compare answers select winner player who choose the closest answer
         :param answer: correct answer
@@ -199,7 +204,7 @@ class ServiceController:
             player.total += player.score
 
             log_text = f'{player.name} answered {player.answer} and got {player.score} point(s)'
-            layout.add_log(log_text)
+            self.layout.add_log(log_text)
 
     def send_results_to_clients(self, answer: int) -> None:
         """
@@ -228,16 +233,23 @@ class ServiceController:
                 response["message"] = f'You lost this round with {self.players[player].answer}.'
 
             # set correct answer and total scores for player
-            response["scores"] = {player: self.players[player].total for player in self.players}
+            scores = {player: self.players[player].total for player in self.players}
+            scores.update({player: self.removed_players[player].total for player in self.removed_players})
+
+            response["scores"] = scores
             response["answer"] = answer
             response["is_end"] = self.asked_question_count == self.total_question_count
 
             # send result message to player
-            self.players[player].send(dumps(response))
+            try:
+                self.players[player].send(dumps(response))
+            except:
+                pass
 
         # close sockets if asked question count is equal to total question count
         if self.asked_question_count == self.total_question_count:
-            self.server.close()
+            for player in self.players:
+                self.players[player].total = 0
 
     def sort_players(self) -> None:
         """
@@ -246,9 +258,53 @@ class ServiceController:
         """
         sorted(self.players, key=lambda player: self.players[player].total, reverse=True)
 
+    def check_connections(self) -> None:
+        """
+        Check connections
+        :return: None
+        """
+        # check if server is terminated
+        if self._is_terminated:
+            return
+
+        # check if players are disconnected
+        for player in self.players:
+            try:
+                self.players[player].send('')
+            except Exception:
+                self.layout.add_log(f'Player {player} with address {self.players[player].address} disconnected')
+                self.players[player].client.close()
+                self.players[player].total = 0
+                self.removed_players[player] = self.players[player]
+
+        # remove disconnected players
+        for player in self.removed_players:
+            self.players.pop(player)
+
+        if len(self.players) <= 1:
+            self.layout.add_log('Only one player left. Game is over.')
+            self._is_terminated = True
+            # send message to last player
+            self.players[list(self.players.keys())[0]].send('only_one_player')
+
+            MessageBox(title="Game Finished", command=self.restart_game,
+                       message="Only one player left. Do you want to restart the game?")
+
+        return None
+
     def increase_asked_question_count(self) -> None:
         """
         Increase asked question count
         :return: None
         """
         self.asked_question_count += 1
+
+    def restart_game(self) -> None:
+        """
+        Terminate game
+        :return: None
+        """
+        self.layout.game_thread.join(timeout=0.1)
+        self.layout.start_game()
+
+
