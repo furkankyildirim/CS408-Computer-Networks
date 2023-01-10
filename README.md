@@ -1,4 +1,4 @@
-# C4308 - Computer Networks 
+# CS408 - Computer Networks 
 
 Group Project of CS408 Course at Sabancı University Fall 23'.
 
